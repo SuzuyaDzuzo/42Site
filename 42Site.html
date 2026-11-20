@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кто учится?</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f2f4f8; display: flex;
+         justify-content: center; padding: 40px 16px; margin: 0; }
+  .card { background: #fff; border-radius: 16px; padding: 28px; width: 100%;
+          max-width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,.08); text-align: center; }
+  h1 { margin-top: 0; font-size: 24px; }
+  #status { padding: 16px; border-radius: 12px; font-size: 18px; margin-bottom: 18px; }
+  .free { background: #e3f8e8; color: #1b6b32; }
+  .busy { background: #ffe8e6; color: #9b2a1f; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px;
+          border: 1px solid #ccd; border-radius: 10px; margin-bottom: 12px; }
+  button { width: 100%; padding: 14px; font-size: 17px; border: 0; border-radius: 10px;
+           margin-bottom: 10px; cursor: pointer; color: #fff; }
+  #start { background: #2f7cf6; }
+  #stop { background: #e5484d; }
+  button:disabled { background: #c5c9d1; cursor: not-allowed; }
+  #msg { min-height: 22px; color: #9b2a1f; margin: 4px 0 12px; }
+  #force { font-size: 13px; color: #888; text-decoration: underline; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📚 Кто учится?</h1>
+  <div id="status" class="free">Загрузка…</div>
+  <input id="name" placeholder="Твоё имя" maxlength="20">
+  <button id="start">Я учусь</button>
+  <button id="stop">Закончить учиться</button>
+  <div id="msg"></div>
+  <a id="force">Сбросить, если человек забыл нажать «Закончить»</a>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue, runTransaction, set }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+// ВСТАВЬ СВОЙ КОНФИГ ИЗ FIREBASE:
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "...",
+  databaseURL: "https://ТВОЙ-ПРОЕКТ-default-rtdb.firebaseio.com",
+  projectId: "...",
+  appId: "..."
+};
+
+const db = getDatabase(initializeApp(firebaseConfig));
+const statusRef = ref(db, "status");
+
+// уникальный id этого браузера, чтобы только "свой" мог нажать "Закончить"
+let myId = localStorage.getItem("myId");
+if (!myId) { myId = Math.random().toString(36).slice(2); localStorage.setItem("myId", myId); }
+
+const $ = id => document.getElementById(id);
+$("name").value = localStorage.getItem("name") || "";
+let current = null;
+
+function render() {
+  const busy = current && current.busy;
+  const mine = busy && current.id === myId;
+  const st = $("status");
+  if (!busy) {
+    st.className = "free"; st.textContent = "✅ Сейчас никто не учится";
+  } else {
+    const mins = Math.floor((Date.now() - current.since) / 60000);
+    st.className = "busy";
+    st.textContent = mine
+      ? `📖 Ты учишься (${mins} мин)`
+      : `⛔ Сейчас учится: ${current.by} (${mins} мин)`;
+  }
+  $("start").disabled = !!busy;
+  $("stop").disabled = !mine;
+}
+
+onValue(statusRef, snap => { current = snap.val(); render(); });
+setInterval(render, 30000);
+
+$("start").onclick = async () => {
+  const name = $("name").value.trim() || "Аноним";
+  localStorage.setItem("name", name);
+  const res = await runTransaction(statusRef, cur => {
+    if (cur && cur.busy) return; // занято — отмена
+    return { busy: true, by: name, id: myId, since: Date.now() };
+  });
+  $("msg").textContent = res.committed ? "" : "⏳ Кто-то уже учится, жди своей очереди!";
+};
+
+$("stop").onclick = async () => {
+  await runTransaction(statusRef, cur => {
+    if (cur && cur.busy && cur.id === myId) return { busy: false };
+    return;
+  });
+  $("msg").textContent = "";
+};
+
+$("force").onclick = () => {
+  if (confirm("Точно сбросить? Делай это, только если человек забыл нажать «Закончить».")) {
+    set(statusRef, { busy: false });
+  }
+};
+</script>
+</body>
+</html>
