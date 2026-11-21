@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Кто учится?</title>
+<title>Кто клодит?</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #f2f4f8; display: flex;
          justify-content: center; padding: 40px 16px; margin: 0; }
@@ -26,11 +26,11 @@
 </head>
 <body>
 <div class="card">
-  <h1>📚 Кто учится?</h1>
+  <h1>📚 Кто клодит?</h1>
   <div id="status" class="free">Загрузка…</div>
   <input id="name" placeholder="Твоё имя" maxlength="20">
-  <button id="start">Я учусь</button>
-  <button id="stop">Закончить учиться</button>
+  <button id="start">Я клодю</button>
+  <button id="stop">Закончить клодить</button>
   <div id="msg"></div>
   <a id="force">Сбросить, если человек забыл нажать «Закончить»</a>
 </div>
@@ -65,13 +65,13 @@ function render() {
   const mine = busy && current.id === myId;
   const st = $("status");
   if (!busy) {
-    st.className = "free"; st.textContent = "✅ Сейчас никто не учится";
+    st.className = "free"; st.textContent = "✅ Сейчас никто не клодит";
   } else {
     const mins = Math.floor((Date.now() - current.since) / 60000);
     st.className = "busy";
     st.textContent = mine
-      ? `📖 Ты учишься (${mins} мин)`
-      : `⛔ Сейчас учится: ${current.by} (${mins} мин)`;
+      ? `📖 Ты клодишь (${mins} мин)`
+      : `⛔ Сейчас клодит: ${current.by} (${mins} мин)`;
   }
   $("start").disabled = !!busy;
   $("stop").disabled = !mine;
@@ -87,7 +87,7 @@ $("start").onclick = async () => {
     if (cur && cur.busy) return; // занято — отмена
     return { busy: true, by: name, id: myId, since: Date.now() };
   });
-  $("msg").textContent = res.committed ? "" : "⏳ Кто-то уже учится, жди своей очереди!";
+  $("msg").textContent = res.committed ? "" : "⏳ Кто-то уже клодит, жди своей очереди!";
 };
 
 $("stop").onclick = async () => {
@@ -98,10 +98,26 @@ $("stop").onclick = async () => {
   $("msg").textContent = "";
 };
 
-$("force").onclick = () => {
-  if (confirm("Точно сбросить? Делай это, только если человек забыл нажать «Закончить».")) {
-    set(statusRef, { busy: false });
+$("force").onclick = async () => {
+  if (!current || !current.busy) {
+    $("msg").textContent = "Сейчас и так никто не клодит.";
+    return;
   }
+  const MIN = 5 * 60 * 1000;
+  const passed = Date.now() - current.since;
+  if (passed < MIN) {
+    const left = Math.ceil((MIN - passed) / 60000);
+    $("msg").textContent = `⛔ Нельзя сбросить: человек клодит меньше 5 минут. Подожди ещё ~${left} мин.`;
+    return;
+  }
+  if (!confirm("Точно сбросить? Делай это, только если человек забыл нажать «Закончить».")) return;
+  // повторная проверка внутри транзакции, чтобы нельзя было обойти
+  const res = await runTransaction(statusRef, cur => {
+    if (!cur || !cur.busy) return cur;
+    if (Date.now() - cur.since < MIN) return; // отмена
+    return { busy: false };
+  });
+  $("msg").textContent = res.committed ? "" : "⛔ Нельзя сбросить: прошло меньше 5 минут.";
 };
 </script>
 </body>
